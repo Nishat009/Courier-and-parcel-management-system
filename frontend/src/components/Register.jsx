@@ -1,32 +1,54 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { api, responseError } from '../api';
+import { AuthLayout, Icon } from './UI';
+import { useAuth } from '../auth-context';
 
 const Register = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
+  const { startSession } = useAuth();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError('');
+    setSubmitting(true);
     try {
-      const res = await axios.post('http://localhost:5000/api/auth/login', { email, password });
-      localStorage.setItem('token', res.data.token);
-      navigate(res.data.user.role === 'admin' ? '/admin' : res.data.user.role === 'agent' ? '/agent' : '/customer');
-    } catch (err) {
-      alert(err.response.data.msg);
+      const response = await api.post('/api/auth/register', form);
+      startSession(response.data.token, response.data.user);
+      navigate('/customer', { replace: true });
+    } catch (error) {
+      setError(responseError(error, 'Unable to create your account. Please try again.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="max-w-md mx-auto mt-10">
-      <h2 className="text-2xl font-bold mb-4">Login</h2>
-      <div className="space-y-4">
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="w-full p-2 border" />
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="w-full p-2 border" />
-        <button onClick={handleSubmit} className="w-full p-2 bg-blue-500 text-white">Login</button>
-      </div>
-    </div>
+    <AuthLayout register>
+      <span className="auth-symbol"><Icon name="plus" size={25} /></span>
+      <h2>Make room for simpler.</h2>
+      <p className="auth-description">Create your customer account. Your next delivery starts here.</p>
+      <form onSubmit={handleSubmit} className="auth-form">
+        <label>Full name
+          <input required autoComplete="name" placeholder="Your full name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+        </label>
+        <label>Email address
+          <input required type="email" autoComplete="email" placeholder="you@example.com" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+        </label>
+        <label>Password
+          <input required type="password" minLength={8} autoComplete="new-password" placeholder="Create a password" aria-describedby="password-hint" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+          <p id="password-hint" className="field-hint">Use at least 8 characters.</p>
+        </label>
+        {error && <p role="alert" className="alert">{error}</p>}
+        <button type="submit" disabled={submitting} className="button-primary">
+          <span>{submitting ? 'Creating account...' : 'Create account'}</span><Icon name="arrow" size={18} />
+        </button>
+      </form>
+      <p className="auth-switch">Already part of the journey? <Link to="/login">Sign in</Link></p>
+    </AuthLayout>
   );
 };
 

@@ -6,7 +6,9 @@ const parcelSchema = new mongoose.Schema({
   deliveryAddress: { type: String, required: true },
   parcelType: { type: String, required: true },
   paymentType: { type: String, enum: ['COD', 'prepaid'], required: true },
-  status: { type: String, enum: ['Booked', 'Picked Up', 'In Transit', 'Delivered', 'Failed'], default: 'Booked' },
+  status: { type: String, enum: ['Processing', 'Booked', 'Picked Up', 'In Transit', 'Delivered', 'Failed'], default: 'Processing' },
+  acceptedAt: { type: Date },
+  acceptedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   qrCode: { type: String },
   coordinates: { lat: Number, lng: Number },
   createdAt: { type: Date, default: Date.now }

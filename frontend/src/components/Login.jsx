@@ -1,32 +1,51 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { api, responseError } from '../api';
+import { AuthLayout, Icon } from './UI';
+import { dashboardPath, useAuth } from '../auth-context';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
+  const { startSession } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+    setSubmitting(true);
     try {
-      const res = await axios.post('http://localhost:5000/api/auth/login', { email, password });
-      localStorage.setItem('token', res.data.token);
-      navigate(res.data.user.role === 'admin' ? '/admin' : res.data.user.role === 'agent' ? '/agent' : '/customer');
-    } catch (err) {
-      alert(err.response.data.msg);
+      const res = await api.post('/api/auth/login', { email, password });
+      startSession(res.data.token, res.data.user);
+      navigate(dashboardPath(res.data.user.role), { replace: true });
+    } catch (error) {
+      setError(responseError(error, 'Unable to log in. Please try again.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="max-w-md mx-auto mt-10">
-      <h2 className="text-2xl font-bold mb-4">Login</h2>
-      <div className="space-y-4">
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="w-full p-2 border" />
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="w-full p-2 border" />
-        <button onClick={handleSubmit} className="w-full p-2 bg-blue-500 text-white">Login</button>
-      </div>
-    </div>
+    <AuthLayout>
+      <span className="auth-symbol"><Icon name="box" size={25} /></span>
+      <h2>Welcome back.</h2>
+      <p className="auth-description">Sign in to your account and keep things moving.</p>
+      <form onSubmit={handleSubmit} className="auth-form">
+        <label>Email address
+          <input type="email" autoComplete="email" placeholder="you@example.com" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        </label>
+        <label>Password
+          <input type="password" autoComplete="current-password" placeholder="Enter your password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+        </label>
+        {error && <p role="alert" className="alert">{error}</p>}
+        <button type="submit" disabled={submitting} className="button-primary">
+          <span>{submitting ? 'Signing in...' : 'Sign in'}</span><Icon name="arrow" size={18} />
+        </button>
+      </form>
+      <p className="auth-switch">A fresh start for your deliveries. <Link to="/register">Join ParcelFlow</Link></p>
+    </AuthLayout>
   );
 };
 

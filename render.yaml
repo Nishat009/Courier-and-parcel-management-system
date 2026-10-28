@@ -27,7 +27,6 @@ services:
   - type: web
     name: courier-parcel-frontend
     runtime: static
-    plan: free
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist

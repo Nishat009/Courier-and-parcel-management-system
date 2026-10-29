@@ -22,7 +22,7 @@ export function Brand({ light = false }) {
   return <Link to="/" className={`brand${light ? ' brand-light' : ''}`} aria-label="ParcelFlow home"><span className="brand-mark"><Icon size={25} /></span><span>Parcel<span className="brand-accent">Flow</span><small>COURIER MANAGEMENT</small></span></Link>;
 }
 
-export function AuthLayout({ children, register = false }) {
+export function AuthLayout({ children }) {
   return <main className="auth-layout">
     <section className="auth-story" aria-label="About ParcelFlow">
       <Brand light />
@@ -39,7 +39,7 @@ export function AuthLayout({ children, register = false }) {
       <p className="story-footer">A little less effort. A lot more clarity.</p>
     </section>
     <section className="auth-main">
-      <div className="auth-topline"><span>{register ? 'Already have an account?' : 'New to ParcelFlow?'}</span><Link to={register ? '/login' : '/register'}>{register ? 'Sign in' : 'Create an account'} <Icon name="arrow" size={15} /></Link></div>
+      <div className="auth-topline"><span>Courier workspace</span><Link to="/merchant-apply">Apply as a merchant <Icon name="arrow" size={15} /></Link></div>
       <div className="auth-form-wrap">{children}</div>
       <p className="auth-footer"><Icon name="shield" size={16} /> Your deliveries, in good hands.</p>
     </section>
@@ -52,14 +52,18 @@ export function DashboardLayout({ role, title, description, children }) {
   const navigation = role === 'customer'
     ? [{ id: 'overview', label: 'Overview', icon: 'grid' }, { id: 'book-parcel', label: 'Request a booking', icon: 'plus' }, { id: 'parcels', label: 'My parcels', icon: 'box' }]
     : role === 'admin'
-      ? [{ id: 'overview', label: 'Overview', icon: 'grid' }, { id: 'bookings', label: 'Bookings', icon: 'box' }, { id: 'users', label: 'Users', icon: 'users' }]
-      : [{ id: 'overview', label: 'Overview', icon: 'grid' }, { id: 'parcels', label: 'Assigned parcels', icon: 'truck' }];
+      ? [{ id: 'overview', label: 'Overview', icon: 'grid' }, { id: 'merchant-applications', label: 'Merchants', icon: 'users' }, { id: 'bookings', label: 'Bookings', icon: 'box' }, { id: 'users', label: 'Users', icon: 'users' }, { id: 'branches', label: 'Branches', icon: 'pin' }]
+      : role === 'merchant'
+        ? [{ id: 'overview', label: 'Overview', icon: 'grid' }, { id: 'bookings', label: 'New booking', icon: 'plus' }, { id: 'parcels', label: 'Parcel history', icon: 'box' }]
+        : role === 'accounts'
+          ? [{ id: 'overview', label: 'Overview', icon: 'grid' }, { id: 'cash-handovers', label: 'Cash handovers', icon: 'box' }, { id: 'payouts', label: 'Payouts', icon: 'check' }]
+          : [{ id: 'overview', label: 'Overview', icon: 'grid' }, { id: 'parcels', label: role === 'rider' ? 'My route' : 'Parcel queue', icon: 'truck' }];
   return <div className="dashboard-layout">
     <aside className="sidebar">
       <Brand />
       <p className="nav-label">WORKSPACE</p>
       <nav aria-label="Workspace navigation">{navigation.map((item) => <Link to={`#${item.id}`} key={item.id} onClick={() => document.getElementById(item.id)?.scrollIntoView({ block: 'start' })} className={activeSection === item.id ? 'nav-active' : undefined} aria-current={activeSection === item.id ? 'location' : undefined}><Icon name={item.icon} />{item.label}{activeSection === item.id && <span className="nav-dot" />}</Link>)}</nav>
-      <div className="sidebar-bottom"><div className="workspace-note"><span className="tiny-dot" /><span>A smoother delivery day.<small>Keep everything moving.</small></span></div><button className="logout-button" onClick={logout}><Icon name="logout" size={18} /> Log out</button></div>
+      <div className="sidebar-bottom"><div className="workspace-note"><span className="tiny-dot" /><span>A smoother delivery day.<small>Keep everything moving.</small></span></div><Link to="/account/security" className="logout-button"><Icon name="shield" size={18} /> Change password</Link><button className="logout-button" onClick={logout}><Icon name="logout" size={18} /> Log out</button></div>
     </aside>
     <div className="dashboard-body">
       <header className="topbar"><span>Workspace <span className="breadcrumb-slash">/</span> <strong>{role.charAt(0).toUpperCase() + role.slice(1)}</strong></span><span className="role-chip"><span className="tiny-dot" />{role} account</span></header>
@@ -73,7 +77,7 @@ export function StatCard({ label, value, icon = 'box', detail }) {
 }
 
 export function StatusBadge({ status }) {
-  const tone = status === 'Delivered' || status === 'Booked' ? 'complete' : status === 'Failed' ? 'failed' : status === 'In Transit' || status === 'Picked Up' ? 'active' : status === 'Processing' ? 'processing' : 'pending';
+  const tone = status === 'Delivered' || status === 'Booked' || status === 'reconciled' || status === 'paid' ? 'complete' : ['Failed', 'Delivery Failed', 'rejected', 'disputed', 'reversed'].includes(status) ? 'failed' : status === 'In Transit' || status === 'Picked Up' || status === 'approved' ? 'active' : status === 'Processing' || status === 'requested' || status === 'submitted' ? 'processing' : 'pending';
   return <span className={`status-badge status-${tone}`}>{status === 'Processing' ? <Icon name="clock" size={12} /> : <span className="tiny-dot" />}{status}</span>;
 }
 

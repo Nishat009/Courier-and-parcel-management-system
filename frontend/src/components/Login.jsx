@@ -18,7 +18,7 @@ const Login = () => {
     setSubmitting(true);
     try {
       const res = await api.post('/api/auth/login', { email, password });
-      startSession(res.data.token, res.data.user);
+      startSession(res.data.user);
       navigate(dashboardPath(res.data.user.role), { replace: true });
     } catch (error) {
       setError(responseError(error, 'Unable to log in. Please try again.'));
@@ -44,7 +44,7 @@ const Login = () => {
           <span>{submitting ? 'Signing in...' : 'Sign in'}</span><Icon name="arrow" size={18} />
         </button>
       </form>
-      <p className="auth-switch">A fresh start for your deliveries. <Link to="/register">Join ParcelFlow</Link></p>
+      <p className="auth-switch"><Link to="/merchant-apply">Apply for a merchant account</Link> · <Link to="/track">Track a parcel</Link></p>
     </AuthLayout>
   );
 };

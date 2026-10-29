@@ -10,13 +10,6 @@ export default function AuthProvider({ children }) {
 
   const refresh = useCallback(async () => {
     const currentRequest = ++requestId.current;
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setUser(null);
-      setError('');
-      setLoading(false);
-      return;
-    }
     try {
       const response = await api.get('/api/auth/me');
       if (currentRequest !== requestId.current) return;
@@ -25,7 +18,6 @@ export default function AuthProvider({ children }) {
     } catch (requestError) {
       if (currentRequest !== requestId.current) return;
       if (requestError.response?.status === 401) {
-        localStorage.removeItem('token');
         setUser(null);
         setError('');
       } else {
@@ -36,9 +28,8 @@ export default function AuthProvider({ children }) {
     }
   }, []);
 
-  const startSession = useCallback((token, account) => {
+  const startSession = useCallback((account) => {
     ++requestId.current;
-    localStorage.setItem('token', token);
     setUser(account);
     setError('');
     setLoading(false);
@@ -46,23 +37,17 @@ export default function AuthProvider({ children }) {
 
   useEffect(() => {
     refresh();
-    const handleStorage = (event) => {
-      if (event.key === 'token' || event.key === null) refresh();
-    };
     const expire = () => {
       ++requestId.current;
-      localStorage.removeItem('token');
       setUser(null);
       setError('');
       setLoading(false);
     };
     window.addEventListener('focus', refresh);
-    window.addEventListener('storage', handleStorage);
     window.addEventListener('auth-refresh', refresh);
     window.addEventListener('auth-expired', expire);
     return () => {
       window.removeEventListener('focus', refresh);
-      window.removeEventListener('storage', handleStorage);
       window.removeEventListener('auth-refresh', refresh);
       window.removeEventListener('auth-expired', expire);
     };

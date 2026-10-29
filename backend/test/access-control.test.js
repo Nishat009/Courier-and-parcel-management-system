@@ -5,6 +5,11 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../src/models/User');
 const Parcel = require('../src/models/Parcel');
+const Session = require('../src/models/Session');
+const MerchantProfile = require('../src/models/MerchantProfile');
+const LedgerEntry = require('../src/models/LedgerEntry');
+const RateLimitBucket = require('../src/models/RateLimitBucket');
+const DeliveryProof = require('../src/models/DeliveryProof');
 const createAdmin = require('../src/utils/createAdmin');
 
 const adminId = '507f1f77bcf86cd799439001';
@@ -29,6 +34,8 @@ before(async () => {
   app.use('/api/auth', require('../src/routes/auth'));
   app.use('/api/admin', require('../src/routes/admin'));
   app.use('/api/parcel', require('../src/routes/parcel'));
+  app.use('/api/merchants', require('../src/routes/merchants'));
+  app.use('/api/finance', require('../src/routes/finance'));
   server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
@@ -60,7 +67,7 @@ const request = async (route, { id, method = 'GET', body, bearer } = {}) => {
     headers: { 'Content-Type': 'application/json', ...(id || bearer ? { Authorization: `Bearer ${bearer || token(id)}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, body: await response.json(), headers: response.headers };
 };
 
 test('every admin operation rejects signed-out users and customers', async () => {
@@ -81,18 +88,76 @@ test('every admin operation rejects signed-out users and customers', async () =>
 test('admin can view metrics, users, and all bookings', async () => {
   mock.method(Parcel, 'countDocuments', async () => 2);
   mock.method(Parcel, 'aggregate', async () => [{ total: 1 }]);
-  mock.method(User, 'find', () => ({ select: async () => [...accounts.values()].map(({ _id, name, email, role }) => ({ _id, name, email, role })) }));
-  const query = { sort: () => query, populate: () => query, then: (resolve) => Promise.resolve([{ _id: parcelId }]).then(resolve) };
+  mock.method(User, 'countDocuments', async () => 4);
+  const userQuery = { select: () => userQuery, populate: () => userQuery, sort: () => userQuery, skip: () => userQuery, limit: () => userQuery, lean: async () => [...accounts.values()].map(({ _id, name, email, role }) => ({ _id, name, email, role })) };
+  mock.method(User, 'find', () => userQuery);
+  const query = { sort: () => query, populate: () => query, skip: () => query, limit: () => query, lean: async () => [{ _id: parcelId }] };
   mock.method(Parcel, 'find', () => query);
+  const proofQuery = { select: () => proofQuery, sort: () => proofQuery, lean: async () => [] };
+  mock.method(DeliveryProof, 'find', () => proofQuery);
   assert.equal((await request('/api/admin/dashboard', { id: adminId })).status, 200);
   const users = await request('/api/admin/users', { id: adminId });
   assert.equal(users.status, 200);
-  assert.equal(users.body.length, 4);
-  assert.equal((await request('/api/admin/bookings', { id: adminId })).status, 200);
+  assert.equal(users.body.items.length, 4);
+  assert.equal(users.body.total, 4);
+  const bookings = await request('/api/admin/bookings', { id: adminId });
+  assert.equal(bookings.status, 200);
+  assert.equal(bookings.body.items.length, 1);
+});
+
+test('merchant application list applies admin status filter and pagination', async () => {
+  let receivedFilter;
+  const query = { populate: () => query, sort: () => query, skip: () => query, limit: () => query, lean: async () => [{ _id: parcelId, status: 'approved' }] };
+  const lookup = mock.method(MerchantProfile, 'find', (filter) => { receivedFilter = filter; return query; });
+  mock.method(MerchantProfile, 'countDocuments', async (filter) => { assert.deepEqual(filter, { status: 'approved' }); return 11; });
+  const result = await request('/api/merchants/applications?page=3&limit=5&status=approved', { id: adminId });
+  assert.equal(result.status, 200);
+  assert.deepEqual(receivedFilter, { status: 'approved' });
+  assert.equal(lookup.mock.callCount(), 1);
+  assert.equal(result.body.page, 3);
+  assert.equal(result.body.limit, 5);
+  assert.equal(result.body.total, 11);
+  assert.equal(result.body.pages, 3);
+  assert.equal(result.body.items[0].status, 'approved');
+});
+
+test('admin user list filters by role and paginates without returning password hashes', async () => {
+  let receivedFilter; let offset; let limit;
+  const query = {
+    select: () => query, populate: () => query, sort: () => query,
+    skip: (value) => { offset = value; return query; },
+    limit: (value) => { limit = value; return query; },
+    lean: async () => [{ _id: customerId, role: 'customer' }]
+  };
+  mock.method(User, 'find', (filter) => { receivedFilter = filter; return query; });
+  mock.method(User, 'countDocuments', async () => 31);
+  const result = await request('/api/admin/users?page=2&limit=10&role=customer', { id: adminId });
+  assert.equal(result.status, 200);
+  assert.deepEqual(receivedFilter, { role: 'customer' });
+  assert.equal(offset, 10);
+  assert.equal(limit, 10);
+  assert.equal(result.body.total, 31);
+  assert.equal(result.body.pages, 4);
+  assert.equal(result.body.items[0].password, undefined);
+});
+
+test('finance ledger marks COD payables already reversed without mutating ledger entries', async () => {
+  const payableId = '507f1f77bcf86cd799439099';
+  const payable = { _id: payableId, type: 'cod_payable', amountPoisha: 5000, merchantId: { _id: customerId, name: 'Merchant' } };
+  const find = mock.method(LedgerEntry, 'find', (filter) => {
+    if (filter.reversesEntryId) return { select: () => ({ lean: async () => [{ reversesEntryId: payableId }] }) };
+    return { populate: () => ({ sort: () => ({ skip: () => ({ limit: () => ({ lean: async () => [payable] }) }) }) }) };
+  });
+  mock.method(LedgerEntry, 'countDocuments', async () => 1);
+  const result = await request('/api/finance/ledger', { id: adminId });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.items[0].reversed, true);
+  assert.equal(find.mock.callCount(), 2);
 });
 
 test('customer parcel queries are scoped to their own identity, ignoring query overrides', async () => {
-  const lookup = mock.method(Parcel, 'find', () => ({ sort: async () => [{ _id: parcelId, customerId }] }));
+  const query = { select: () => query, sort: async () => [{ _id: parcelId, customerId }] };
+  const lookup = mock.method(Parcel, 'find', () => query);
   const result = await request(`/api/parcel/my-parcels?customerId=${secondCustomerId}`, { id: customerId });
   assert.equal(result.status, 200);
   assert.deepEqual(lookup.mock.calls[0].arguments[0], { customerId });
@@ -101,172 +166,94 @@ test('customer parcel queries are scoped to their own identity, ignoring query o
   assert.equal((await request(`/api/parcel/status/${parcelId}`, { id: customerId, method: 'PUT', body: { status: 'Delivered' } })).status, 403);
 });
 
-test('parcel booking cannot impersonate another customer or inject status', async () => {
+test('legacy customer booking writes are retired and cannot inject parcel data', async () => {
   const saved = mock.method(Parcel.prototype, 'save', async function () { return this; });
   const body = { pickupAddress: 'Dhaka', deliveryAddress: 'Sylhet', parcelType: 'Books', paymentType: 'COD', customerId: secondCustomerId, status: 'Booked', acceptedBy: customerId, acceptedAt: new Date().toISOString(), qrCode: 'fake-confirmation' };
   const result = await request('/api/parcel/book', { id: customerId, method: 'POST', body });
-  assert.equal(result.status, 201);
-  assert.equal(result.body.customerId, customerId);
-  assert.equal(result.body.status, 'Processing');
-  assert.equal(result.body.qrCode, undefined);
-  assert.equal(result.body.acceptedAt, undefined);
-  assert.equal(result.body.acceptedBy, undefined);
-  assert.deepEqual(events, [{ room: 'admins', event: 'parcelRequested', data: { _id: saved.mock.calls[0].this._id } }]);
-  assert.equal(saved.mock.callCount(), 1);
+  assert.equal(result.status, 410);
+  assert.equal(saved.mock.callCount(), 0);
+  assert.deepEqual(events, []);
   assert.equal((await request('/api/parcel/book', { id: adminId, method: 'POST', body })).status, 403);
 });
 
-test('only an admin can accept a request; approval records identity, time, QR and live updates', async () => {
-  const update = mock.method(Parcel, 'findOneAndUpdate', async (filter, changes) => {
-    assert.deepEqual(filter, { _id: parcelId, status: 'Processing' });
-    return { _id: parcelId, customerId, ...changes.$set };
-  });
+test('legacy parcel acceptance writes are retired', async () => {
+  const update = mock.method(Parcel, 'findOneAndUpdate', async () => null);
   assert.equal((await request(`/api/parcel/accept/${parcelId}`, { id: agentId, method: 'PUT' })).status, 403);
   assert.equal(update.mock.callCount(), 0);
   const result = await request(`/api/parcel/accept/${parcelId}`, { id: adminId, method: 'PUT', body: { status: 'Delivered', acceptedBy: customerId } });
-  assert.equal(result.status, 200);
-  assert.equal(result.body.status, 'Booked');
-  assert.equal(result.body.acceptedBy, adminId);
-  assert.ok(Date.parse(result.body.acceptedAt));
-  assert.match(result.body.qrCode, /^data:image\/png;base64,/);
-  assert.deepEqual(events.map(({ room, event, data }) => ({ room, event, status: data.status })), [
-    { room: `customer:${customerId}`, event: 'statusUpdate', status: 'Booked' },
-    { room: 'admins', event: 'statusUpdate', status: 'Booked' }
-  ]);
-});
-
-test('repeated or concurrent acceptance attempts do not overwrite a confirmed booking', async () => {
-  let status = 'Processing';
-  const update = mock.method(Parcel, 'findOneAndUpdate', async (filter, changes) => {
-    if (filter.status !== status) return null;
-    status = changes.$set.status;
-    return { _id: parcelId, customerId, ...changes.$set };
-  });
-  mock.method(Parcel, 'exists', async () => ({ _id: parcelId }));
-  const results = await Promise.all([1, 2].map(() => request(`/api/parcel/accept/${parcelId}`, { id: adminId, method: 'PUT' })));
-  assert.deepEqual(results.map(result => result.status).sort(), [200, 409]);
-  assert.equal(events.length, 2);
-  assert.equal(status, 'Booked');
-  assert.equal(update.mock.callCount(), 2);
-});
-
-test('acceptance rejects invalid IDs, missing parcels, and parcels already in delivery', async () => {
-  const update = mock.method(Parcel, 'findOneAndUpdate', async () => null);
-  const exists = mock.method(Parcel, 'exists', async () => null);
-  assert.equal((await request('/api/parcel/accept/invalid', { id: adminId, method: 'PUT' })).status, 400);
+  assert.equal(result.status, 410);
   assert.equal(update.mock.callCount(), 0);
-  assert.equal((await request(`/api/parcel/accept/${parcelId}`, { id: adminId, method: 'PUT' })).status, 404);
-  exists.mock.mockImplementation(async () => ({ _id: parcelId }));
-  assert.equal((await request(`/api/parcel/accept/${parcelId}`, { id: adminId, method: 'PUT' })).status, 409);
-  assert.equal(events.length, 0);
+  assert.deepEqual(events, []);
 });
 
-test('agent assignment requires acceptance and succeeds after the booking is confirmed', async () => {
-  mock.method(User, 'findOne', () => ({ select: async () => ({ _id: agentId }) }));
-  mock.method(Parcel, 'exists', async () => ({ _id: parcelId }));
-  let status = 'Processing';
-  mock.method(Parcel, 'findOneAndUpdate', async (filter, changes) => {
-    assert.deepEqual(filter, { _id: parcelId, status: { $ne: 'Processing' } });
-    return status === 'Processing' ? null : { _id: parcelId, customerId, status, ...changes };
-  });
-  const result = await request(`/api/parcel/assign/${parcelId}`, { id: adminId, method: 'PUT', body: { agentId } });
-  assert.equal(result.status, 409);
+test('repeated legacy acceptance attempts do not mutate records', async () => {
+  const update = mock.method(Parcel, 'findOneAndUpdate', async () => null);
+  const results = await Promise.all([1, 2].map(() => request(`/api/parcel/accept/${parcelId}`, { id: adminId, method: 'PUT' })));
+  assert.deepEqual(results.map(result => result.status), [410, 410]);
   assert.equal(events.length, 0);
-  status = 'Booked';
-  const confirmed = await request(`/api/parcel/assign/${parcelId}`, { id: adminId, method: 'PUT', body: { agentId } });
-  assert.equal(confirmed.status, 200);
-  assert.equal(confirmed.body.agentId, agentId);
+  assert.equal(update.mock.callCount(), 0);
 });
 
-test('agents cannot advance a Processing request, even if an old assignment exists', async () => {
-  const save = mock.fn(async () => {});
-  mock.method(Parcel, 'findOne', async () => ({ _id: parcelId, customerId, agentId, status: 'Processing', save }));
-  for (const status of ['Booked', 'Picked Up', 'Failed']) {
-    assert.equal((await request(`/api/parcel/status/${parcelId}`, { id: agentId, method: 'PUT', body: { status } })).status, 400);
+test('legacy acceptance rejects all IDs with a retirement response without database writes', async () => {
+  const update = mock.method(Parcel, 'findOneAndUpdate', async () => null);
+  for (const route of ['/api/parcel/accept/invalid', `/api/parcel/accept/${parcelId}`]) {
+    assert.equal((await request(route, { id: adminId, method: 'PUT' })).status, 410);
   }
-  const lookup = mock.method(Parcel, 'find', () => ({ sort: async () => [] }));
+  assert.equal(update.mock.callCount(), 0);
+  assert.equal(events.length, 0);
+});
+
+test('legacy customer-to-agent assignment writes are retired', async () => {
+  const update = mock.method(Parcel, 'findOneAndUpdate', async () => null);
+  assert.equal((await request(`/api/parcel/assign/${parcelId}`, { id: agentId, method: 'PUT', body: { agentId } })).status, 403);
+  assert.equal((await request(`/api/parcel/assign/${parcelId}`, { id: adminId, method: 'PUT', body: { agentId } })).status, 410);
+  assert.equal(update.mock.callCount(), 0);
+  assert.deepEqual(events, []);
+});
+
+test('legacy agent status writes are retired while historical assignments stay readable', async () => {
+  const update = mock.method(Parcel, 'findById', async () => null);
+  for (const status of ['Booked', 'Picked Up', 'Failed']) {
+    assert.equal((await request(`/api/parcel/status/${parcelId}`, { id: agentId, method: 'PUT', body: { status } })).status, 410);
+  }
+  const lookupQuery = { select: () => lookupQuery, sort: () => lookupQuery, lean: async () => [] };
+  const lookup = mock.method(Parcel, 'find', () => lookupQuery);
   assert.equal((await request('/api/parcel/assigned', { id: agentId })).status, 200);
   assert.deepEqual(lookup.mock.calls[0].arguments[0], { agentId, status: { $ne: 'Processing' } });
-  assert.equal(save.mock.callCount(), 0);
+  assert.equal(update.mock.callCount(), 0);
 });
 
-test('admin can manage an accepted parcel delivery without assigning an agent', async () => {
-  const parcel = {
-    _id: parcelId,
-    customerId,
-    status: 'Booked',
-    save: async function () { return this; }
-  };
-  const lookup = mock.method(Parcel, 'findById', async (id) => {
-    assert.equal(id, parcelId);
-    return parcel;
-  });
-
-  const pickedUp = await request(`/api/parcel/status/${parcelId}`, {
-    id: adminId,
-    method: 'PUT',
-    body: { status: 'Picked Up' }
-  });
-  assert.equal(pickedUp.status, 200);
-  assert.equal(pickedUp.body.status, 'Picked Up');
-  assert.equal(lookup.mock.callCount(), 1);
-
-  const inTransit = await request(`/api/parcel/status/${parcelId}`, {
-    id: adminId,
-    method: 'PUT',
-    body: { status: 'In Transit' }
-  });
-  assert.equal(inTransit.status, 200);
-
-  const delivered = await request(`/api/parcel/status/${parcelId}`, {
-    id: adminId,
-    method: 'PUT',
-    body: { status: 'Delivered' }
-  });
-  assert.equal(delivered.status, 200);
-  assert.equal(delivered.body.status, 'Delivered');
-  assert.deepEqual(events.filter(({ event }) => event === 'statusUpdate').map(({ room, data }) => ({
-    room,
-    status: data.status
-  })), [
-    { room: `customer:${customerId}`, status: 'Picked Up' },
-    { room: 'admins', status: 'Picked Up' },
-    { room: `customer:${customerId}`, status: 'In Transit' },
-    { room: 'admins', status: 'In Transit' },
-    { room: `customer:${customerId}`, status: 'Delivered' },
-    { room: 'admins', status: 'Delivered' }
-  ]);
-  assert.equal((await request(`/api/parcel/status/${parcelId}`, {
-    id: adminId,
-    method: 'PUT',
-    body: { status: 'Picked Up' }
-  })).status, 400);
+test('administrator cannot advance legacy parcel status through retired writes', async () => {
+  const lookup = mock.method(Parcel, 'findById', async () => null);
+  for (const status of ['Picked Up', 'In Transit', 'Delivered']) {
+    assert.equal((await request(`/api/parcel/status/${parcelId}`, { id: adminId, method: 'PUT', body: { status } })).status, 410);
+  }
+  assert.equal(lookup.mock.callCount(), 0);
+  assert.deepEqual(events, []);
 });
 
 test('dashboard counts Processing separately from confirmed daily bookings', async () => {
   mock.method(Parcel, 'countDocuments', async (filter) => {
     if (filter.status === 'Processing') return 3;
-    if (filter.status === 'Failed') return 1;
-    assert.deepEqual(filter.status, { $ne: 'Processing' });
-    assert.ok(filter.$or[0].acceptedAt.$gte instanceof Date);
-    return 0;
+    if (filter.status === 'Delivery Failed') return 1;
+    if (filter.$or) {
+      assert.ok(filter.$or[0].acceptedAt.$gte instanceof Date);
+      return 4;
+    }
+    assert.fail('Unexpected dashboard parcel count query');
   });
   mock.method(Parcel, 'aggregate', async () => []);
   const result = await request('/api/admin/dashboard', { id: adminId });
   assert.equal(result.status, 200);
   assert.equal(result.body.processingParcels, 3);
-  assert.equal(result.body.dailyBookings, 0);
+  assert.equal(result.body.dailyBookings, 4);
+  assert.equal(result.body.failedDeliveries, 1);
 });
 
-test('public registration cannot choose admin or agent privileges', async () => {
-  mock.method(User, 'findOne', async () => null);
-  mock.method(User.prototype, 'save', async function () { return this; });
+test('public account self-registration is retired; merchant application is the public onboarding path', async () => {
   for (const role of ['admin', 'agent']) {
     const result = await request('/api/auth/register', { method: 'POST', body: { name: 'New Customer', email: 'new@example.com', password: 'customer-password', role } });
-    assert.equal(result.status, 201);
-    assert.equal(result.body.user.role, 'customer');
-    assert.equal(jwt.verify(result.body.token, process.env.JWT_SECRET).role, 'customer');
-    assert.equal(result.body.user.password, undefined);
+    assert.equal(result.status, 410);
   }
 });
 

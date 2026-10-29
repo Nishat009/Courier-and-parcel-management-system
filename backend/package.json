@@ -1,11 +1,17 @@
 {
   "name": "backend",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20.19.0 <21 || >=22.12.0"
+  },
   "main": "index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "create-admin": "node src/scripts/create-admin.js",
+    "migrate": "node src/scripts/migrate.js",
+    "seed:dev": "node src/scripts/seed-dev.js",
+    "test:integration": "node --test integration/courier.integration.js",
     "test": "node --test"
   },
   "keywords": [],

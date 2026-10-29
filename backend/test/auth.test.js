@@ -4,6 +4,8 @@ const jwt = require('jsonwebtoken');
 const auth = require('../src/middleware/auth');
 const User = require('../src/models/User');
 const authenticateToken = require('../src/utils/authenticateToken');
+const Session = require('../src/models/Session');
+const crypto = require('node:crypto');
 
 const accountId = '507f1f77bcf86cd799439011';
 const mockAccount = (role) => mock.method(User, 'findById', () => ({ select: async () => role ? ({ _id: accountId, name: 'Test User', email: 'user@example.com', role }) : null }));
@@ -108,4 +110,23 @@ test('database failures do not grant access or claim the password is wrong', asy
   const { response, nextCalled } = await invokeAuth(auth(['admin']), `Bearer ${token}`);
   assert.equal(response.statusCode, 503);
   assert.equal(nextCalled, false);
+});
+
+test('HttpOnly session cookie resolves a server-side session and current database role', async () => {
+  const rawSession = 'test-session-cookie-secret';
+  const tokenHash = crypto.createHash('sha256').update(rawSession).digest('hex');
+  const session = { userId: accountId, tokenHash, expiresAt: new Date(Date.now() + 60_000) };
+  mock.method(Session, 'findOne', (filter) => {
+    assert.equal(filter.tokenHash, tokenHash);
+    const query = { select: () => query, lean: async () => session };
+    return query;
+  });
+  mock.method(User, 'findById', () => ({ select: async () => ({ _id: accountId, name: 'Merchant', email: 'merchant@example.test', role: 'merchant', accountStatus: 'active', branchIds: [] }) }));
+  const request = { headers: { cookie: `other=value; courier_session=${rawSession}` }, header: () => undefined };
+  const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  let nextCalled = false;
+  await auth(['merchant'])(request, response, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+  assert.equal(request.user.role, 'merchant');
+  assert.equal(request.user.branchIds.length, 0);
 });

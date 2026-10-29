@@ -191,3 +191,23 @@ select:disabled { cursor: default; color: #819179; background: #f4f7f1; }
 @media (max-width: 1100px) { .sidebar { width: 215px; padding-inline: 17px; } .dashboard-body { margin-left: 215px; } .dashboard-main { padding: 30px 25px 20px; } .topbar { padding-inline: 25px; } .customer-grid { grid-template-columns: minmax(0, 1fr); } .agent-list { grid-template-columns: minmax(0, 1fr); } .auth-story { padding-inline: 9%; } .auth-main { padding-inline: 9%; } .auth-topline { gap: 8px; font-size: 11px; } }
 @media (max-width: 760px) { .auth-layout { grid-template-columns: minmax(0, 1fr); } .auth-story { padding: 24px; } .story-content, .story-footer { display: none; } .auth-story .brand { font-size: 21px; } .auth-main { min-height: calc(100svh - 91px); padding: 25px; } .auth-form-wrap { padding: 45px 0; } .auth-topline { justify-content: center; } .auth-form-wrap h2 { font-size: 28px; } .sidebar { position: static; width: auto; padding: 20px 20px 0; border-right: 0; border-bottom: 1px solid var(--border); } .sidebar .brand { margin-left: 0; font-size: 20px; } .sidebar .brand-mark { width: 36px; height: 36px; border-radius: 9px; } .nav-label, .workspace-note { display: none; } .sidebar nav { display: flex; gap: 6px; margin-top: 22px; padding-bottom: 14px; overflow-x: auto; } .sidebar nav a { white-space: nowrap; padding: 10px; font-size: 11px; gap: 7px; } .sidebar nav a svg { width: 16px; height: 16px; } .nav-dot { display: none; } .sidebar-bottom { position: absolute; top: 16px; right: 17px; padding: 0; } .logout-button { font-size: 11px; padding: 10px; } .dashboard-layout { display: block; } .dashboard-body { margin-left: 0; } .topbar { min-height: 62px; padding: 14px 22px; font-size: 10px; } .role-chip { font-size: 9px; } .dashboard-main { padding: 28px 20px 20px; } .page-heading h1 { font-size: 25px; } .heading-icon { display: none; } .page-heading p:last-child { font-size: 12px; } .stats-grid { gap: 9px; } .stat-card { padding: 14px 12px; } .stat-top { font-size: 10px; align-items: flex-start; } .stat-icon { display: none; } .stat-card > strong { font-size: 27px; } .stat-card > small { font-size: 9px; line-height: 1.5; } .panel-heading { padding: 20px; } .booking-form { padding: 20px; } .parcel-list { padding: 14px; } .parcel-card { padding: 16px; } .data-table td, .data-table th { padding-left: 20px; padding-right: 20px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
+.cash-item { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.cash-item input { width: 18px; height: 18px; accent-color: var(--green); }
+.panel ol { padding-left: 22px; line-height: 2; color: var(--muted); }
+.panel > label:not(.cash-item) { display: grid; gap: 8px; margin: 16px 0; font-size: 12px; color: var(--muted); }
+.panel > label:not(.cash-item) input { min-height: 42px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; }
+.parcel-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 12px; }
+.inline-search { display: flex; align-items: center; gap: 8px; }
+.inline-search input { width: min(190px, 42vw); min-height: 42px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; }
+.inline-search .button-secondary { min-height: 42px; padding: 8px 12px; }
+.price-estimate { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--border); border-radius: 9px; background: #f8fbf7; }
+.price-estimate > strong { font-size: 13px; }
+.price-estimate dl { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; margin: 0; font-size: 12px; }
+.price-estimate dt { color: var(--muted); }
+.price-estimate dd { margin: 0; text-align: right; font-weight: 600; }
+.price-estimate small { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.parcel-actions select { min-height: 42px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: #fff; }
+.event-list { display: grid; gap: 8px; margin: 14px 0 0; padding: 0 0 0 22px; color: var(--text); }
+.event-list li { padding-left: 4px; }
+.event-list li strong, .event-list li time { display: block; }
+.event-list li time { margin-top: 2px; color: var(--muted); font-size: 12px; }

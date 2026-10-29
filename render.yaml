@@ -6,10 +6,14 @@ services:
     rootDir: backend
     buildCommand: npm ci
     startCommand: npm start
-    healthCheckPath: /
+    healthCheckPath: /health/ready
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "24.22.1"
+      - key: TRUST_PROXY
+        value: "1"
       # MongoDB Atlas connection string (mongodb+srv://...)
       - key: MONGO_URI
         sync: false
@@ -18,11 +22,13 @@ services:
       # Frontend URL(s), comma-separated, e.g. https://courier-parcel-frontend.onrender.com
       - key: CLIENT_URL
         sync: false
-      # Optional: Gmail address + app password for parcel status emails
+      # Optional: SMTP credentials for transactional merchant application/review emails
       - key: NODEMAILER_EMAIL
         sync: false
       - key: NODEMAILER_PASS
         sync: false
+      - key: EMAIL_SERVICE
+        value: gmail
 
   - type: web
     name: courier-parcel-frontend
@@ -31,10 +37,10 @@ services:
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     envVars:
+      - key: NODE_VERSION
+        value: "24.22.1"
       # Backend URL, e.g. https://courier-parcel-api.onrender.com (read at build time)
       - key: VITE_API_URL
-        sync: false
-      - key: VITE_GOOGLE_MAPS_API_KEY
         sync: false
     routes:
       - type: rewrite
